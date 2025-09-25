@@ -1,6 +1,7 @@
 /*
- * main_direct_control.ino
+ * DirecControlV3.ino
  * เฟิร์มแวร์เวอร์ชันตัดทอนสำหรับหุ่นยนต์ Mecanum 4 ล้อ (ควบคุมตรง)
+ * V3: เพิ่ม Joystick Deadzone เพื่อการหยุดที่แม่นยำ
  *
  * การทำงานหลัก:
  * 1.  อ่านค่าจากรีโมทคอนโทรล FlySky i6 ผ่านโปรโตคอล i-Bus
@@ -42,6 +43,11 @@
 const int SWITCH_MID_THRESHOLD = 1500;
 const int SWITCH_LOW_THRESHOLD = 1200;
 
+// --- V3 ADDED: Joystick Deadzone ---
+// ค่า +/- ที่จะถือว่าเป็น 0 เพื่อป้องกัน Joystick drift
+const int JOYSTICK_DEADZONE = 5;
+// --- END V3 ADDED ---
+
 // ความเร็วสูงสุดในหน่วย PWM สำหรับแต่ละเกียร์
 const int LOW_GEAR_PWM = 150;  // เกียร์ช้า (PWM สูงสุดที่ 150)
 const int HIGH_GEAR_PWM = 255; // เกียร์เร็ว (PWM สูงสุดที่ 255)
@@ -62,6 +68,16 @@ IBT2_MotorDriver motor_BR(BR_MOTOR_RPWM, BR_MOTOR_LPWM, BR_MOTOR_IS);
 // สร้างอ็อบเจกต์สำหรับรีโมท (ใช้ Serial1) และ struct สำหรับเก็บสถานะ
 FlySkyi6Remote remote(Serial1);
 RemoteState remote_state;
+
+// --- V3 ADDED: Helper function for deadzone ---
+int apply_deadzone(int value, int deadzone) {
+    if (abs(value) <= deadzone) {
+        return 0;
+    }
+    return value;
+}
+// --- END V3 ADDED ---
+
 
 // ==================== SETUP ====================
 void setup() {
@@ -115,9 +131,16 @@ void loop() {
 
     // 3. แปลงค่า Joystick เป็นค่า PWM โดยตรง
     int max_pwm = (remote_state.switch_B < SWITCH_MID_THRESHOLD) ? LOW_GEAR_PWM : HIGH_GEAR_PWM;
-    int stick_y_pwm = map(remote_state.right_stick_y, -100, 100, -max_pwm, max_pwm); // เดินหน้า/ถอยหลัง
-    int stick_x_pwm = map(remote_state.right_stick_x, -100, 100, -max_pwm, max_pwm); // สไลด์ข้าง
-    int stick_yaw_pwm = map(remote_state.left_stick_x, -100, 100, -max_pwm, max_pwm); // หมุนตัว
+
+    // --- V3 MODIFIED: Apply deadzone before mapping ---
+    int stick_y = apply_deadzone(remote_state.right_stick_y, JOYSTICK_DEADZONE);
+    int stick_x = apply_deadzone(remote_state.right_stick_x, JOYSTICK_DEADZONE);
+    int stick_yaw = apply_deadzone(remote_state.left_stick_x, JOYSTICK_DEADZONE);
+
+    int stick_y_pwm = map(stick_y, -100, 100, -max_pwm, max_pwm); // เดินหน้า/ถอยหลัง
+    int stick_x_pwm = map(stick_x, -100, 100, -max_pwm, max_pwm); // สไลด์ข้าง
+    int stick_yaw_pwm = map(stick_yaw, -100, 100, -max_pwm, max_pwm); // หมุนตัว
+    // --- END V3 MODIFIED ---
 
     // 4. คำนวณ PWM สำหรับแต่ละล้อตามหลักการ Mecanum
     int pwm_FL = stick_y_pwm + stick_x_pwm + stick_yaw_pwm;
